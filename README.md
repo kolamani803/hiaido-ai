@@ -26,3 +26,6 @@ After a successful workflow, the deployment URL appears in Actions → Deploy Hi
 - Container deployment to Kubernetes / OpenShift
 
 Production authentication and backend services must be implemented before issuing user credentials.
+
+
+<!-- Pages deployment trigger: public demo setup -->
