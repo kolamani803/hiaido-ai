@@ -27,6 +27,7 @@
 <section class="view" id="audit"><div class="hero"><div><div class="eyebrow">TRACEABILITY</div><h1>Audit & History</h1><p>Searchable records of user, AI and automation activity.</p></div></div><div class="panel"><div class="empty"><b>Audit API not connected</b>Audit records will appear when persistent backend logging is enabled.</div></div></section>
 <section class="view" id="admin"><div class="hero"><div><div class="eyebrow">WORKSPACE CONFIGURATION</div><h1>Administration</h1><p>Identity, members, model providers and platform settings.</p></div></div><div class="panel"><div class="notice">Authentication is not enabled on GitHub Pages. This public preview must not be used for sensitive data or operational access.</div><div class="empty"><b>Identity provider not configured</b>Production sign-in is planned with Microsoft Entra ID, role-based access and server-side sessions.</div></div></section>
 </main></div>
+<script src="config.js"></script>
 <script>
 const API_BASE=(window.HIAIDO_API_BASE||'').replace(/\/$/,'');
 function navigate(id){document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active',v.id===id));document.querySelectorAll('.nav button').forEach(b=>b.classList.toggle('active',b.dataset.view===id));const b=document.querySelector('[data-view="'+id+'"]');document.getElementById('crumb').textContent=b?b.innerText.trim():id}
