@@ -1,0 +1,99 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hiaido-api
+  namespace: hiaido
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hiaido-api
+  template:
+    metadata:
+      labels:
+        app: hiaido-api
+    spec:
+      serviceAccountName: hiaido-api
+      containers:
+        - name: api
+          image: YOUR_REGISTRY/hiaido-api:latest
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: CORS_ORIGINS
+              value: "https://kolamani803.github.io"
+            - name: ONTAP_BASE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: hiaido-api-config
+                  key: ontap-base-url
+                  optional: true
+            - name: ONTAP_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: ontap-credentials
+                  key: username
+                  optional: true
+            - name: ONTAP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ontap-credentials
+                  key: password
+                  optional: true
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hiaido-api
+  namespace: hiaido
+spec:
+  selector:
+    app: hiaido-api
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: hiaido-api
+  namespace: hiaido
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: hiaido-api-reader
+rules:
+  - apiGroups: [""]
+    resources: ["nodes", "pods", "namespaces", "events"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: hiaido-api-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: hiaido-api-reader
+subjects:
+  - kind: ServiceAccount
+    name: hiaido-api
+    namespace: hiaido
