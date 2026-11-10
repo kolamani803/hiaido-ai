@@ -29,3 +29,14 @@ Production authentication and backend services must be implemented before issuin
 
 
 <!-- Pages deployment trigger: public demo setup -->
+
+
+## Current UI and live-data mode
+The frontend has been rebuilt around the original enterprise workspace concept: Dashboard, Resource Inventory, Environments, Operations, AI Assistant, Automation, Tools & Data, Activity & Tasks, Governance, Audit & History, and Administration. It no longer renders invented sample metrics. When the API is unavailable, values remain blank and the UI explains which connection is missing.
+
+## Backend starter (not yet deployed)
+A FastAPI service is included under `backend/`. It can read Kubernetes/OpenShift nodes and pods using its in-cluster service account and can optionally test an ONTAP REST connection using server-side environment variables. It exposes `GET /health` and `GET /api/v1/overview`.
+
+The GitHub Pages site is only the static frontend. **Live data will not appear until the backend is built, deployed inside an authorized cluster, and the frontend is configured with its HTTPS API base URL.** The included OpenShift manifest is a starting point and must be reviewed by your platform/security team. It grants read-only list/get/watch access to nodes, pods, namespaces and events. Do not expose the API publicly without Entra/OAuth authentication, TLS, a strict CORS allowlist and secrets management.
+
+Build the API image from `backend/`, publish it to your approved registry, review `deploy/openshift`, deploy it in a protected namespace, then set `window.HIAIDO_API_BASE` in `config.js` to the protected API URL. Never commit credentials or tokens.
