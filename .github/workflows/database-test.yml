@@ -41,7 +41,7 @@ jobs:
           cache: pip
           cache-dependency-path: backend/requirements.txt
       - name: Install API and test dependencies
-        run: pip install -r backend/requirements.txt
+        run: pip install -r backend/requirements-test.txt
       - name: Apply migrations to PostgreSQL 16
         working-directory: backend
         run: alembic upgrade head
