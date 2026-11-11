@@ -86,7 +86,7 @@ def require_admin(user:User=Depends(current_user))->User:
 
 def normalize_email(value):
     value=value.strip().lower()
-    if not re.fullmatch(r"[^@\\s]+@[^@\\s]+\\.[^@\\s]+",value): raise HTTPException(422,"A valid email address is required")
+    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+",value): raise HTTPException(422,"A valid email address is required")
     return value
 
 @app.on_event("startup")
