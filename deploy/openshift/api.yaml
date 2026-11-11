@@ -33,7 +33,6 @@ metadata:
   name: hiaido-api-config
   namespace: hiaido
 data:
-  ENTRA_REQUIRED_APP_ROLE: "HiAIDo.Access"
   CORS_ORIGINS: "https://kolamani803.github.io"
   ONTAP_VERIFY_TLS: "true"
 ---
