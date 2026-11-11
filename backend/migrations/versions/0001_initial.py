@@ -12,7 +12,7 @@ def upgrade():
     op.create_table(
         "integrations",
         sa.Column("id", sa.String(36), primary_key=True),
-        sa.Column("tenant_id", sa.String(64), nullable=False, index=True),
+        sa.Column("tenant_id", sa.String(64), nullable=False),
         sa.Column("name", sa.String(100), nullable=False),
         sa.Column("provider", sa.String(60), nullable=False),
         sa.Column("transport", sa.String(32), nullable=False),
@@ -25,6 +25,7 @@ def upgrade():
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         sa.UniqueConstraint("tenant_id", "name", name="uq_integrations_tenant_name"),
     )
+    op.create_index("ix_integrations_tenant_id", "integrations", ["tenant_id"])
     op.create_table(
         "audit_events",
         sa.Column("id", sa.String(36), primary_key=True),
@@ -36,7 +37,10 @@ def upgrade():
         sa.Column("outcome", sa.String(40), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
     )
+    op.create_index("ix_audit_events_tenant_id", "audit_events", ["tenant_id"])
 
 def downgrade():
+    op.drop_index("ix_audit_events_tenant_id", table_name="audit_events")
+    op.drop_index("ix_integrations_tenant_id", table_name="integrations")
     op.drop_table("audit_events")
     op.drop_table("integrations")
