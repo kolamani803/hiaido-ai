@@ -289,3 +289,34 @@ def platform_status(user:User=Depends(current_user),db=Depends(db_session)):
     counts=db.execute(text("""SELECT kind,count(*) AS total FROM workspace_items WHERE tenant_id=:tenant GROUP BY kind"""),{"tenant":user.tenant_id}).mappings().all()
     integrations_count=db.execute(text("SELECT count(*) FROM integrations WHERE tenant_id=:tenant"),{"tenant":user.tenant_id}).scalar_one()
     return {"workspace_counts":{x["kind"]:x["total"] for x in counts},"integrations_registered":integrations_count,"database":"connected","authentication":"local_accounts","ai_model":"not_configured","mcp_execution":"not_configured"}
+
+
+# Optional OpenAI-compatible model gateway. Credentials remain server-side.
+class CopilotRequest(BaseModel):
+    message:str=Field(min_length=2,max_length=12000)
+
+@app.post("/api/v1/copilot/chat")
+def copilot_chat(payload:CopilotRequest,user:User=Depends(require_operator)):
+    base=os.getenv("AI_API_BASE_URL","https://api.openai.com/v1").rstrip("/")
+    key=os.getenv("AI_API_KEY","").strip()
+    model=os.getenv("AI_MODEL","gpt-4.1-mini").strip()
+    if not key: raise HTTPException(503,"AI model gateway is not configured. Set AI_API_KEY and AI_MODEL on the API deployment.")
+    parsed=urlparse(base)
+    if parsed.scheme!="https" or not parsed.hostname or parsed.username or parsed.password:
+        raise HTTPException(503,"AI_API_BASE_URL must be a valid HTTPS endpoint without embedded credentials")
+    system=("You are HiAIDo.ai, an enterprise cloud operations copilot. Be concise and technically precise. "
+            "You do not have access to the user's infrastructure, MCP tools, logs, or live telemetry in this session. "
+            "Never claim to have inspected or changed systems. Distinguish verified facts from hypotheses. "
+            "Prefer read-only diagnostics, explain risks, and require explicit human approval for any change. "
+            "Ask the user to provide sanitized command output when live evidence is needed. Never request secrets.")
+    try:
+        response=requests.post(base+"/chat/completions",headers={"Authorization":"Bearer "+key,"Content-Type":"application/json"},
+            json={"model":model,"messages":[{"role":"system","content":system},{"role":"user","content":payload.message}],"temperature":0.2},
+            timeout=(5,45),verify=True)
+        response.raise_for_status()
+        data=response.json()
+        answer=data["choices"][0]["message"]["content"]
+        if not isinstance(answer,str): raise ValueError("Invalid model response")
+    except (requests.RequestException,KeyError,ValueError,TypeError) as e:
+        raise HTTPException(502,"AI gateway request failed: "+str(e)[:180])
+    return {"answer":answer,"model":model,"grounding":"user_prompt_only","tools_available":False}
