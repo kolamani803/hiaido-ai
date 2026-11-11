@@ -75,7 +75,7 @@ There is no public sign-up route. User creation and account deactivation require
 Before applying:
 1. Build and publish the backend image; replace the image tag in the manifest with the immutable release tag.
 2. Create namespace `hiaido`.
-3. Create secret `hiaido-api-secrets` with `DATABASE_URL`, `ENTRA_TENANT_ID`, `ENTRA_API_AUDIENCE`, and any optional ONTAP credentials.
+3. Create secret `hiaido-api-secrets` with `DATABASE_URL`, a random `SESSION_SECRET` (32+ characters), `BOOTSTRAP_ADMIN_EMAIL`, `BOOTSTRAP_ADMIN_PASSWORD` (16+ characters), and any optional ONTAP credentials.
 4. Configure the external PostgreSQL service, TLS, backups and network policy.
 5. Review the cluster-wide read-only RBAC grant with the platform security team.
 6. Apply the manifest and run Alembic migrations as a controlled release job before scaling the API.
