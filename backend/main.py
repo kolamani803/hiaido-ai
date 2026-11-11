@@ -190,7 +190,7 @@ def register(payload:Integration,user:User=Depends(require_operator),db=Depends(
         db.rollback();raise HTTPException(503,"Integration registration could not be persisted")
     return {"id":iid,"status":"pending_validation","message":"Metadata registered; worker validation and approval are required"}
 @app.get("/api/v1/overview")
-def overview(user:User=Depends(current_user)):
+def overview(user:User=Depends(current_user),db=Depends(db_session)):
     providers={"openshift":{"connected":False},"ontap":{"connected":False}}
     resources=[];activity=[];count=healthy=active=0
     try:
