@@ -1,0 +1,132 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: hiaido-api
+  namespace: hiaido
+automountServiceAccountToken: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: hiaido-api-readonly
+rules:
+  - apiGroups: [""]
+    resources: ["nodes", "pods"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: hiaido-api-readonly
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: hiaido-api-readonly
+subjects:
+  - kind: ServiceAccount
+    name: hiaido-api
+    namespace: hiaido
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hiaido-api-config
+  namespace: hiaido
+data:
+  ENTRA_REQUIRED_APP_ROLE: "HiAIDo.Access"
+  CORS_ORIGINS: "https://kolamani803.github.io"
+  ONTAP_VERIFY_TLS: "true"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hiaido-api
+  namespace: hiaido
+  labels:
+    app: hiaido-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: hiaido-api
+  template:
+    metadata:
+      labels:
+        app: hiaido-api
+    spec:
+      serviceAccountName: hiaido-api
+      automountServiceAccountToken: true
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: api
+          image: ghcr.io/kolamani803/hiaido-api:REPLACE_WITH_RELEASE_TAG
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: hiaido-api-config
+            - secretRef:
+                name: hiaido-api-secrets
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 192Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hiaido-api
+  namespace: hiaido
+spec:
+  selector:
+    app: hiaido-api
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: hiaido-api
+  namespace: hiaido
+spec:
+  to:
+    kind: Service
+    name: hiaido-api
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
