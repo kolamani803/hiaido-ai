@@ -84,6 +84,10 @@ def require_admin(user:User=Depends(current_user))->User:
     if "admin" not in user.roles: raise HTTPException(403,"Administrator role required")
     return user
 
+def require_operator(user:User=Depends(current_user))->User:
+    if not any(role in user.roles for role in ("admin","operator")): raise HTTPException(403,"Operator role required")
+    return user
+
 def normalize_email(value):
     value=value.strip().lower()
     if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+",value): raise HTTPException(422,"A valid email address is required")
@@ -171,7 +175,7 @@ def integrations(user:User=Depends(current_user),db=Depends(db_session)):
     rows=db.execute(text("SELECT id,name,provider,transport,endpoint,secret_ref,allowed_tools,access_mode,status,created_at FROM integrations WHERE tenant_id=:t ORDER BY created_at DESC"),{"t":user.tenant_id}).mappings().all()
     return {"items":[dict(x) for x in rows]}
 @app.post("/api/v1/integrations",status_code=status.HTTP_201_CREATED)
-def register(payload:Integration,user:User=Depends(current_user),db=Depends(db_session)):
+def register(payload:Integration,user:User=Depends(require_operator),db=Depends(db_session)):
     if payload.transport=="streamable_http" and not payload.endpoint: raise HTTPException(422,"HTTPS endpoint is required for Streamable HTTP")
     if payload.transport=="stdio" and payload.endpoint: raise HTTPException(422,"stdio servers are launched by managed workers; endpoint must be empty")
     iid=str(uuid4())
