@@ -62,4 +62,4 @@ jobs:
           PY
       - name: Test login, RBAC, integrations and account deactivation
         working-directory: backend
-        run: pytest -q
+        run: PYTHONPATH=. pytest -q
