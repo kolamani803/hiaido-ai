@@ -51,7 +51,7 @@ jobs:
           python - <<'PY'
           import os
           import psycopg
-          with psycopg.connect(os.environ["DATABASE_URL"]) as db:
+          dsn = os.environ["DATABASE_URL"].replace("postgresql+psycopg://", "postgresql://", 1)\n          with psycopg.connect(dsn) as db:
               version = db.execute("select version_num from alembic_version").fetchone()[0]
               tables = {row[0] for row in db.execute("select tablename from pg_tables where schemaname='public'")}
               expected = {"user_accounts", "integrations", "audit_events", "workspace_items", "alembic_version"}
