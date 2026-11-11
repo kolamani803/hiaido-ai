@@ -214,3 +214,78 @@ def overview(user:User=Depends(current_user)):
             providers["ontap"]={"connected":True,"name":r.json().get("name","ONTAP cluster")};count+=1
         except requests.RequestException as e:providers["ontap"]={"connected":False,"error":str(e)[:240]}
     return {"generated_at":datetime.now(timezone.utc).isoformat(),"resource_count":count,"healthy_count":healthy,"active_operations":active,"connected_integrations":sum(1 for p in providers.values() if p.get("connected")),"providers":providers,"resources":resources[:100],"activity":activity[:20]}
+
+
+# Tenant-scoped operational workspace: incidents, workflows, knowledge, dashboards, tasks, approvals and SLOs.
+from fastapi import Query
+
+WORKSPACE_KINDS={"incident","workflow","knowledge","dashboard","task","approval","slo"}
+class WorkspaceItemCreate(BaseModel):
+    title:str=Field(min_length=2,max_length=200)
+    status:str=Field(default="open",pattern="^(open|in_progress|blocked|pending_approval|completed|archived)$")
+    priority:str=Field(default="normal",pattern="^(low|normal|high|critical)$")
+    owner:str|None=Field(default=None,max_length=254)
+    payload:dict[str,Any]=Field(default_factory=dict)
+
+class WorkspaceItemUpdate(BaseModel):
+    title:str|None=Field(default=None,min_length=2,max_length=200)
+    status:str|None=Field(default=None,pattern="^(open|in_progress|blocked|pending_approval|completed|archived)$")
+    priority:str|None=Field(default=None,pattern="^(low|normal|high|critical)$")
+    owner:str|None=Field(default=None,max_length=254)
+    payload:dict[str,Any]|None=None
+
+@app.get("/api/v1/workspace/{kind}")
+def list_workspace_items(kind:str, user:User=Depends(current_user), db=Depends(db_session), limit:int=Query(default=100,ge=1,le=500)):
+    if kind not in WORKSPACE_KINDS: raise HTTPException(404,"Unknown workspace resource")
+    rows=db.execute(text("""SELECT id,kind,title,status,priority,owner,payload,created_by,created_at,updated_at
+        FROM workspace_items WHERE tenant_id=:tenant AND kind=:kind ORDER BY updated_at DESC LIMIT :limit"""),
+        {"tenant":user.tenant_id,"kind":kind,"limit":limit}).mappings().all()
+    return {"items":[dict(x) for x in rows]}
+
+@app.post("/api/v1/workspace/{kind}",status_code=status.HTTP_201_CREATED)
+def create_workspace_item(kind:str,payload:WorkspaceItemCreate,user:User=Depends(require_operator),db=Depends(db_session)):
+    if kind not in WORKSPACE_KINDS: raise HTTPException(404,"Unknown workspace resource")
+    item_id=str(uuid4())
+    db.execute(text("""INSERT INTO workspace_items(id,tenant_id,kind,title,status,priority,owner,payload,created_by)
+        VALUES(:id,:tenant,:kind,:title,:status,:priority,:owner,CAST(:payload AS jsonb),:actor)"""),
+        {"id":item_id,"tenant":user.tenant_id,"kind":kind,"title":payload.title.strip(),"status":payload.status,"priority":payload.priority,"owner":payload.owner,"payload":json.dumps(payload.payload),"actor":user.subject})
+    db.execute(text("""INSERT INTO audit_events(id,tenant_id,actor_id,action,resource_type,resource_id,outcome)
+        VALUES(:id,:tenant,:actor,:action,'workspace_item',:rid,'success')"""),
+        {"id":str(uuid4()),"tenant":user.tenant_id,"actor":user.subject,"action":f"workspace.{kind}.create","rid":item_id})
+    db.commit()
+    return {"id":item_id,"kind":kind,"title":payload.title.strip(),"status":payload.status,"priority":payload.priority}
+
+@app.patch("/api/v1/workspace/{kind}/{item_id}")
+def update_workspace_item(kind:str,item_id:str,payload:WorkspaceItemUpdate,user:User=Depends(require_operator),db=Depends(db_session)):
+    if kind not in WORKSPACE_KINDS: raise HTTPException(404,"Unknown workspace resource")
+    changes=payload.model_dump(exclude_unset=True)
+    if not changes: raise HTTPException(400,"No changes supplied")
+    allowed={"title","status","priority","owner","payload"}
+    sets=[];params={"id":item_id,"tenant":user.tenant_id,"kind":kind}
+    for key,value in changes.items():
+        if key not in allowed: continue
+        if key=="payload":
+            sets.append("payload=CAST(:payload AS jsonb)");params["payload"]=json.dumps(value)
+        else:
+            sets.append(f"{key}=:{key}");params[key]=value
+    sets.append("updated_at=now()")
+    result=db.execute(text(f"UPDATE workspace_items SET {', '.join(sets)} WHERE id=:id AND tenant_id=:tenant AND kind=:kind"),params)
+    if result.rowcount==0: raise HTTPException(404,"Workspace item not found")
+    db.execute(text("""INSERT INTO audit_events(id,tenant_id,actor_id,action,resource_type,resource_id,outcome)
+        VALUES(:id,:tenant,:actor,:action,'workspace_item',:rid,'success')"""),
+        {"id":str(uuid4()),"tenant":user.tenant_id,"actor":user.subject,"action":f"workspace.{kind}.update","rid":item_id})
+    db.commit()
+    return {"id":item_id,"updated":True}
+
+@app.get("/api/v1/audit")
+def list_audit_events(user:User=Depends(current_user),db=Depends(db_session),limit:int=Query(default=100,ge=1,le=500)):
+    rows=db.execute(text("""SELECT id,actor_id,action,resource_type,resource_id,outcome,created_at
+        FROM audit_events WHERE tenant_id=:tenant ORDER BY created_at DESC LIMIT :limit"""),
+        {"tenant":user.tenant_id,"limit":limit}).mappings().all()
+    return {"items":[dict(x) for x in rows]}
+
+@app.get("/api/v1/platform")
+def platform_status(user:User=Depends(current_user),db=Depends(db_session)):
+    counts=db.execute(text("""SELECT kind,count(*) AS total FROM workspace_items WHERE tenant_id=:tenant GROUP BY kind"""),{"tenant":user.tenant_id}).mappings().all()
+    integrations_count=db.execute(text("SELECT count(*) FROM integrations WHERE tenant_id=:tenant"),{"tenant":user.tenant_id}).scalar_one()
+    return {"workspace_counts":{x["kind"]:x["total"] for x in counts},"integrations_registered":integrations_count,"database":"connected","authentication":"local_accounts","ai_model":"not_configured","mcp_execution":"not_configured"}
