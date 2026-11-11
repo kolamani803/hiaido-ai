@@ -15,7 +15,7 @@ HiAIDo.ai is an enterprise AI cloud-operations workspace for infrastructure visi
 - Secure terminal workspace concept
 - FinOps, tasks, governance, audit and administration
 
-The UI distinguishes product capabilities from connected services. It does not fabricate infrastructure metrics or simulated AI responses.
+The UI includes tenant-backed operational registries for incidents, workflows, knowledge articles, dashboards, tasks, approvals and SLO definitions; an audit viewer; live resource inventory; a configurable Copilot chat panel; and an MCP registration form. Features requiring external providers remain explicitly marked as unavailable until configured.
 
 ## Current implementation status
 
@@ -42,7 +42,7 @@ The FastAPI backend now includes:
 The integration registry records metadata with status `pending_validation`; it does **not** launch MCP servers. A separate isolated worker runtime, policy engine, secret manager and approval service are still required before any tool invocation or write action can be enabled.
 
 ### PostgreSQL
-Alembic migration `0001_initial` creates tenant-scoped `integrations` and `audit_events` tables. Run migrations explicitly as a deployment step:
+Alembic migrations `0001_initial` through `0003_workspace_items` create tenant-scoped integration, audit, account and operational workspace tables. The connected Neon project `hiaido-ai` uses PostgreSQL 17, database `hiaido`, and is migrated to `0003_workspace_items`. Run migrations explicitly as a deployment step:
 ```bash
 cd backend
 alembic upgrade head
@@ -75,10 +75,10 @@ There is no public sign-up route. User creation and account deactivation require
 Before applying:
 1. Build and publish the backend image; replace the image tag in the manifest with the immutable release tag.
 2. Create namespace `hiaido`.
-3. Create secret `hiaido-api-secrets` with `DATABASE_URL`, a random `SESSION_SECRET` (32+ characters), `BOOTSTRAP_ADMIN_EMAIL`, `BOOTSTRAP_ADMIN_PASSWORD` (16+ characters), and any optional ONTAP credentials.
+3. Create secret `hiaido-api-secrets` with `DATABASE_URL` (use the least-privilege `hiaido_app` role's Neon connection string), a random `SESSION_SECRET` (32+ characters), `BOOTSTRAP_ADMIN_EMAIL`, `BOOTSTRAP_ADMIN_PASSWORD` (16+ characters), and optional `AI_API_KEY`, `ONTAP_USERNAME`, and `ONTAP_PASSWORD`. Configure `AI_API_BASE_URL` and `AI_MODEL` in the ConfigMap or secret store.
 4. Configure the external PostgreSQL service, TLS, backups and network policy.
 5. Review the cluster-wide read-only RBAC grant with the platform security team.
-6. Apply the manifest and run Alembic migrations as a controlled release job before scaling the API.
+6. Apply the namespace, ConfigMap and secret.\n7. Run `deploy/openshift/migrate-job.yaml` once for the release and confirm it completes.\n8. Apply `deploy/openshift/api.yaml` and verify `/health` and `/ready`.
 
 The current API image workflow publishes to GHCR when backend files change. Cluster deployment is intentionally not automated: it requires an approved target cluster, image pull configuration, secrets, and an authorized release process.
 
@@ -87,12 +87,12 @@ The current API image workflow publishes to GHCR when backend files change. Clus
 The following are still roadmap items and must not be represented as active:
 - Isolated MCP worker pool for stdio and Streamable HTTP
 - Secret-manager integration and credential rotation
-- AI model gateway, streaming chat, model routing and grounded retrieval
+- AI model routing, streaming chat, retrieval grounding and live MCP tool context
 - Full Entra group-to-workspace RBAC and multi-tenant administration UI
-- Approval engine and policy-enforced tool execution
+- Approval engine and policy-enforced tool execution (the current approval registry only stores requests)
 - Durable event pipeline, comprehensive immutable audit, alerting and SLOs
 - Full Kubernetes inventory permissions, cloud connectors, ONTAP telemetry and ITSM integrations
-- Automated tests, threat modeling, penetration testing and production operational runbooks
+- Automated security testing, threat modeling, penetration testing and production operational runbooks
 
 The backend is a foundation, not a certified production SaaS service. Do not expose it before the identity, database, network, secrets and security review are complete.
 
