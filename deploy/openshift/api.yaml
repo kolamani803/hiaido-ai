@@ -34,7 +34,7 @@ metadata:
   namespace: hiaido
 data:
   CORS_ORIGINS: "https://kolamani803.github.io"
-  ONTAP_VERIFY_TLS: "true"
+  ONTAP_VERIFY_TLS: "true"\n  AI_API_BASE_URL: "https://api.openai.com/v1"\n  AI_MODEL: "gpt-4.1-mini"
 ---
 apiVersion: apps/v1
 kind: Deployment
