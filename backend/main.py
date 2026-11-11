@@ -1,5 +1,5 @@
 import os,json
-from datetime import datetime,timezone
+from datetime import datetime,timezone,timedelta
 from typing import Any
 from urllib.parse import urlparse
 from uuid import uuid4
@@ -29,7 +29,7 @@ URL=os.getenv("DATABASE_URL","").strip()
 engine=create_engine(URL,pool_pre_ping=True,pool_recycle=300) if URL else None
 Session=sessionmaker(bind=engine,autoflush=False,autocommit=False) if engine else None
 app=FastAPI(title="HiAIDo.ai API",version=VERSION)
-app.add_middleware(CORSMiddleware,allow_origins=[x.strip() for x in os.getenv("CORS_ORIGINS","").split(",") if x.strip()],allow_credentials=True,allow_methods=["GET","POST"],allow_headers=["Authorization","Content-Type"])
+app.add_middleware(CORSMiddleware,allow_origins=[x.strip() for x in os.getenv("CORS_ORIGINS","").split(",") if x.strip()],allow_credentials=True,allow_methods=["GET","POST","PATCH"],allow_headers=["Authorization","Content-Type"])
 
 class User(BaseModel):
     subject:str
@@ -60,16 +60,24 @@ class Integration(BaseModel):
         if p.scheme!="https" or not p.hostname or p.username or p.password: raise ValueError("Remote MCP endpoints require HTTPS and cannot contain credentials")
         return v
 
+def db_session():
+    if not Session: raise HTTPException(503,"DATABASE_URL is not configured")
+    db=Session()
+    try: yield db
+    finally: db.close()
+
 def issue_token(row):
     now=datetime.now(timezone.utc)
-    return jwt.encode({"sub":row["id"],"tid":row["tenant_id"],"name":row["name"],"role":row["role"],"iat":now,"exp":now+__import__("datetime").timedelta(hours=TOKEN_TTL_HOURS),"iss":SESSION_ISSUER},SESSION_SECRET,algorithm="HS256")
+    return jwt.encode({"sub":row["id"],"tid":row["tenant_id"],"name":row["name"],"role":row["role"],"iat":now,"exp":now+timedelta(hours=TOKEN_TTL_HOURS),"iss":SESSION_ISSUER},SESSION_SECRET,algorithm="HS256")
 
-def current_user(authorization:str|None=Header(default=None))->User:
+def current_user(authorization:str|None=Header(default=None),db=Depends(db_session))->User:
     if len(SESSION_SECRET)<32: raise HTTPException(503,"SESSION_SECRET must be configured with at least 32 characters")
     if not authorization or not authorization.startswith("Bearer "): raise HTTPException(401,"Bearer session token required")
     try:
         claims=jwt.decode(authorization[7:].strip(),SESSION_SECRET,algorithms=["HS256"],issuer=SESSION_ISSUER,options={"require":["exp","iat","iss","sub","tid","role"]})
     except Exception: raise HTTPException(401,"Invalid or expired session")
+    active=db.execute(text("SELECT active FROM user_accounts WHERE id=:id AND tenant_id=:tenant"),{"id":claims["sub"],"tenant":claims["tid"]}).scalar_one_or_none()
+    if active is not True: raise HTTPException(401,"Account is disabled or no longer exists")
     return User(subject=str(claims["sub"]),tenant_id=str(claims["tid"]),name=claims.get("name"),roles=[str(claims["role"])])
 
 def require_admin(user:User=Depends(current_user))->User:
@@ -137,12 +145,6 @@ def update_user_status(user_id:str,active:bool,admin:User=Depends(require_admin)
     db.execute(text("""INSERT INTO audit_events(id,tenant_id,actor_id,action,resource_type,resource_id,outcome)
     VALUES(:id,:tenant,:actor,'user.status_change','user',:rid,:outcome)"""),{"id":str(uuid4()),"tenant":admin.tenant_id,"actor":admin.subject,"rid":user_id,"outcome":"active" if active else "disabled"});db.commit()
     return {"id":user_id,"active":active}
-
-def db_session():
-    if not Session: raise HTTPException(503,"DATABASE_URL is not configured")
-    db=Session()
-    try: yield db
-    finally: db.close()
 
 def kube():
     try: config.load_incluster_config()
