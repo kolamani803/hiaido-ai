@@ -3,7 +3,9 @@ from datetime import datetime,timezone
 from typing import Any
 from urllib.parse import urlparse
 from uuid import uuid4
-import jwt,requests
+import jwt,requests,re
+from argon2 import PasswordHasher
+from argon2.exceptions import VerifyMismatchError,InvalidHash
 from fastapi import FastAPI,Depends,Header,HTTPException,status
 from fastapi.middleware.cors import CORSMiddleware
 from jwt import PyJWKClient
@@ -14,12 +16,15 @@ from sqlalchemy import create_engine,text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import sessionmaker
 
-VERSION="0.2.0"
-TENANT=os.getenv("ENTRA_TENANT_ID","").strip()
-AUDIENCE=os.getenv("ENTRA_API_AUDIENCE","").strip()
-ISSUER=f"https://login.microsoftonline.com/{TENANT}/v2.0" if TENANT else ""
-JWKS=PyJWKClient(f"https://login.microsoftonline.com/{TENANT}/discovery/v2.0/keys") if TENANT else None
-ROLE=os.getenv("ENTRA_REQUIRED_APP_ROLE","HiAIDo.Access")
+VERSION="0.3.0"
+SESSION_SECRET=os.getenv("SESSION_SECRET","").strip()
+SESSION_ISSUER="hiaido.ai"
+TOKEN_TTL_HOURS=int(os.getenv("TOKEN_TTL_HOURS","8"))
+BOOTSTRAP_EMAIL=os.getenv("BOOTSTRAP_ADMIN_EMAIL","").strip().lower()
+BOOTSTRAP_PASSWORD=os.getenv("BOOTSTRAP_ADMIN_PASSWORD","")
+BOOTSTRAP_NAME=os.getenv("BOOTSTRAP_ADMIN_NAME","HiAIDo Administrator")
+DEFAULT_TENANT=os.getenv("DEFAULT_TENANT_ID","default").strip()
+password_hasher=PasswordHasher()
 URL=os.getenv("DATABASE_URL","").strip()
 engine=create_engine(URL,pool_pre_ping=True,pool_recycle=300) if URL else None
 Session=sessionmaker(bind=engine,autoflush=False,autocommit=False) if engine else None
@@ -31,6 +36,14 @@ class User(BaseModel):
     tenant_id:str
     name:str|None=None
     roles:list[str]=[]
+class LoginRequest(BaseModel):
+    email:str=Field(min_length=3,max_length=254)
+    password:str=Field(min_length=1,max_length=200)
+class CreateUserRequest(BaseModel):
+    email:str=Field(min_length=3,max_length=254)
+    name:str=Field(min_length=2,max_length=100)
+    password:str=Field(min_length=12,max_length=200)
+    role:str=Field(default="operator",pattern="^(admin|operator|viewer)$")
 class Integration(BaseModel):
     name:str=Field(min_length=2,max_length=100)
     provider:str=Field(min_length=2,max_length=60)
@@ -47,18 +60,83 @@ class Integration(BaseModel):
         if p.scheme!="https" or not p.hostname or p.username or p.password: raise ValueError("Remote MCP endpoints require HTTPS and cannot contain credentials")
         return v
 
+def issue_token(row):
+    now=datetime.now(timezone.utc)
+    return jwt.encode({"sub":row["id"],"tid":row["tenant_id"],"name":row["name"],"role":row["role"],"iat":now,"exp":now+__import__("datetime").timedelta(hours=TOKEN_TTL_HOURS),"iss":SESSION_ISSUER},SESSION_SECRET,algorithm="HS256")
+
 def current_user(authorization:str|None=Header(default=None))->User:
-    # Protected routes fail closed until Entra app registration is configured.
-    if not TENANT or not AUDIENCE or not JWKS: raise HTTPException(503,"Entra authentication is not configured")
-    if not authorization or not authorization.startswith("Bearer "): raise HTTPException(401,"Bearer access token required")
+    if len(SESSION_SECRET)<32: raise HTTPException(503,"SESSION_SECRET must be configured with at least 32 characters")
+    if not authorization or not authorization.startswith("Bearer "): raise HTTPException(401,"Bearer session token required")
     try:
-        key=JWKS.get_signing_key_from_jwt(authorization[7:].strip()).key
-        claims=jwt.decode(authorization[7:].strip(),key,algorithms=["RS256"],audience=AUDIENCE,issuer=ISSUER,options={"require":["exp","iat","iss","aud","tid","oid"]})
-    except Exception: raise HTTPException(401,"Invalid or expired access token")
-    if claims.get("tid")!=TENANT: raise HTTPException(403,"Tenant is not permitted")
-    roles=claims.get("roles",[])
-    if ROLE and ROLE not in roles: raise HTTPException(403,"Required application role is missing")
-    return User(subject=str(claims["oid"]),tenant_id=str(claims["tid"]),name=claims.get("name"),roles=roles)
+        claims=jwt.decode(authorization[7:].strip(),SESSION_SECRET,algorithms=["HS256"],issuer=SESSION_ISSUER,options={"require":["exp","iat","iss","sub","tid","role"]})
+    except Exception: raise HTTPException(401,"Invalid or expired session")
+    return User(subject=str(claims["sub"]),tenant_id=str(claims["tid"]),name=claims.get("name"),roles=[str(claims["role"])])
+
+def require_admin(user:User=Depends(current_user))->User:
+    if "admin" not in user.roles: raise HTTPException(403,"Administrator role required")
+    return user
+
+def normalize_email(value):
+    value=value.strip().lower()
+    if not re.fullmatch(r"[^@\\s]+@[^@\\s]+\\.[^@\\s]+",value): raise HTTPException(422,"A valid email address is required")
+    return value
+
+@app.on_event("startup")
+def bootstrap_admin():
+    if not engine or not BOOTSTRAP_EMAIL or not BOOTSTRAP_PASSWORD: return
+    if len(SESSION_SECRET)<32: raise RuntimeError("SESSION_SECRET must be configured with at least 32 characters")
+    if len(BOOTSTRAP_PASSWORD)<16: raise RuntimeError("BOOTSTRAP_ADMIN_PASSWORD must be at least 16 characters")
+    with engine.begin() as db:
+        count=db.execute(text("SELECT count(*) FROM user_accounts WHERE role='admin'")).scalar_one()
+        if count==0:
+            db.execute(text("""INSERT INTO user_accounts(id,tenant_id,email,name,password_hash,role,created_by)
+            VALUES(:id,:tenant,:email,:name,:hash,'admin','bootstrap') ON CONFLICT (tenant_id,email) DO NOTHING"""),
+            {"id":str(uuid4()),"tenant":DEFAULT_TENANT,"email":normalize_email(BOOTSTRAP_EMAIL),"name":BOOTSTRAP_NAME,"hash":password_hasher.hash(BOOTSTRAP_PASSWORD)})
+
+@app.post("/api/v1/auth/login")
+def login(payload:LoginRequest,db=Depends(db_session)):
+    if len(SESSION_SECRET)<32: raise HTTPException(503,"Local account authentication is not configured")
+    email=normalize_email(payload.email)
+    row=db.execute(text("""SELECT id,tenant_id,email,name,password_hash,role,active FROM user_accounts WHERE email=:email"""),{"email":email}).mappings().first()
+    if not row or not row["active"]:
+        raise HTTPException(401,"Invalid email or password")
+    try: password_hasher.verify(row["password_hash"],payload.password)
+    except (VerifyMismatchError,InvalidHash): raise HTTPException(401,"Invalid email or password")
+    if password_hasher.check_needs_rehash(row["password_hash"]):
+        db.execute(text("UPDATE user_accounts SET password_hash=:hash WHERE id=:id"),{"hash":password_hasher.hash(payload.password),"id":row["id"]});db.commit()
+    db.execute(text("""INSERT INTO audit_events(id,tenant_id,actor_id,action,resource_type,resource_id,outcome)
+    VALUES(:id,:tenant,:actor,'auth.login','user',:actor,'success')"""),{"id":str(uuid4()),"tenant":row["tenant_id"],"actor":row["id"]});db.commit()
+    return {"access_token":issue_token(row),"token_type":"bearer","expires_in":TOKEN_TTL_HOURS*3600,"user":{"id":row["id"],"email":row["email"],"name":row["name"],"role":row["role"]}}
+
+@app.get("/api/v1/users")
+def list_users(admin:User=Depends(require_admin),db=Depends(db_session)):
+    rows=db.execute(text("""SELECT id,email,name,role,active,created_at FROM user_accounts WHERE tenant_id=:tenant ORDER BY created_at DESC"""),{"tenant":admin.tenant_id}).mappings().all()
+    return {"items":[dict(x) for x in rows]}
+
+@app.post("/api/v1/users",status_code=status.HTTP_201_CREATED)
+def create_user(payload:CreateUserRequest,admin:User=Depends(require_admin),db=Depends(db_session)):
+    email=normalize_email(payload.email)
+    uid=str(uuid4())
+    try:
+        db.execute(text("""INSERT INTO user_accounts(id,tenant_id,email,name,password_hash,role,created_by)
+        VALUES(:id,:tenant,:email,:name,:hash,:role,:actor)"""),{"id":uid,"tenant":admin.tenant_id,"email":email,"name":payload.name.strip(),"hash":password_hasher.hash(payload.password),"role":payload.role,"actor":admin.subject})
+        db.execute(text("""INSERT INTO audit_events(id,tenant_id,actor_id,action,resource_type,resource_id,outcome)
+        VALUES(:id,:tenant,:actor,'user.create','user',:rid,'success')"""),{"id":str(uuid4()),"tenant":admin.tenant_id,"actor":admin.subject,"rid":uid})
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        if "uq_user_accounts_tenant_email" in str(e) or "unique" in str(e).lower(): raise HTTPException(409,"An account with this email already exists")
+        raise HTTPException(503,"User account could not be created")
+    return {"id":uid,"email":email,"name":payload.name.strip(),"role":payload.role,"status":"created"}
+
+@app.patch("/api/v1/users/{user_id}/status")
+def update_user_status(user_id:str,active:bool,admin:User=Depends(require_admin),db=Depends(db_session)):
+    if user_id==admin.subject and not active: raise HTTPException(400,"You cannot deactivate your own account")
+    result=db.execute(text("UPDATE user_accounts SET active=:active WHERE id=:id AND tenant_id=:tenant"),{"active":active,"id":user_id,"tenant":admin.tenant_id})
+    if result.rowcount==0: raise HTTPException(404,"User not found")
+    db.execute(text("""INSERT INTO audit_events(id,tenant_id,actor_id,action,resource_type,resource_id,outcome)
+    VALUES(:id,:tenant,:actor,'user.status_change','user',:rid,:outcome)"""),{"id":str(uuid4()),"tenant":admin.tenant_id,"actor":admin.subject,"rid":user_id,"outcome":"active" if active else "disabled"});db.commit()
+    return {"id":user_id,"active":active}
 
 def db_session():
     if not Session: raise HTTPException(503,"DATABASE_URL is not configured")
