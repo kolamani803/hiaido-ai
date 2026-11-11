@@ -29,7 +29,7 @@ def upgrade():
     op.create_table(
         "audit_events",
         sa.Column("id", sa.String(36), primary_key=True),
-        sa.Column("tenant_id", sa.String(64), nullable=False, index=True),
+        sa.Column("tenant_id", sa.String(64), nullable=False),
         sa.Column("actor_id", sa.String(100), nullable=False),
         sa.Column("action", sa.String(120), nullable=False),
         sa.Column("resource_type", sa.String(80), nullable=False),
