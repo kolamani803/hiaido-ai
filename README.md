@@ -1,64 +1,106 @@
 # HiAIDo.ai
 **Build and Ops with AI**
 
-HiAIDo.ai is an enterprise AI cloud-operations workspace designed to bring infrastructure visibility, AI-assisted operations, automation, observability, MCP integrations and governance into one product.
+HiAIDo.ai is an enterprise AI cloud-operations workspace for infrastructure visibility, AI-assisted operations, automation, observability, MCP integrations and governance.
 
-## Product experience
+## Product workspaces
 
-The responsive frontend includes:
-- Unified command center and provider health overview
-- Resource explorer and environment views
+- Command Center and provider health overview
+- Resource Explorer and environment views
 - AI Operations Copilot workspace
-- Observability and SRE / incident-management workspaces
+- Observability, SRE and incident management
 - Automation Studio and dashboard builder
 - Knowledge Hub for runbooks and internal documentation
 - MCP Marketplace for OpenShift, NetApp ONTAP, AWS, Azure, GCP, VMware, observability and custom MCP servers
 - Secure terminal workspace concept
-- FinOps and optimization workspace
-- Tasks, activity, governance, audit and administration
+- FinOps, tasks, governance, audit and administration
 
-The UI distinguishes product capabilities from connected services. It does not fabricate infrastructure metrics or simulate AI responses.
+The UI distinguishes product capabilities from connected services. It does not fabricate infrastructure metrics or simulated AI responses.
 
-## Public preview
+## Current implementation status
 
-The GitHub Pages deployment is a **frontend preview**, not a production service. It has no user authentication, tenant isolation, persistent database, AI model gateway, MCP worker runtime, or production action execution. Do not enter credentials, tokens, confidential data or production information.
+### Frontend
+The GitHub Pages site is a public product preview. It includes a Microsoft Entra browser sign-in integration scaffold using MSAL Browser. Authentication remains disabled until the public identifiers in `config.js` are configured and the matching Entra app registrations, redirect URI, delegated API scope and role assignment are created.
 
-Some controls explain the intended production flow but do not establish integrations or execute operations. The API URL field is a browser-session convenience for testing a protected API; it does not add authentication or make a public API safe.
+Only public identifiers belong in `config.js`. Never put client secrets, API tokens, certificates or infrastructure credentials in frontend files.
 
-## Current backend starter
+### API
+The FastAPI backend now includes:
+- Entra v2 access-token validation against tenant-specific Microsoft JWKS
+- Required API audience, issuer, tenant and application-role checks
+- Fail-closed behavior when Entra configuration is absent
+- `GET /health` and database-backed `GET /ready`
+- `GET /api/v1/me`
+- Tenant-scoped integration registry endpoints
+- HTTPS-only validation for remote Streamable HTTP MCP endpoints
+- Secret-manager reference storage only; raw secrets are never accepted
+- Read-only Kubernetes/OpenShift inventory overview
+- Optional ONTAP REST cluster connectivity with TLS verification enabled by default
 
-A FastAPI starter is available under `backend/`. It exposes:
-- `GET /health`
-- `GET /api/v1/overview`
+The integration registry records metadata with status `pending_validation`; it does **not** launch MCP servers. A separate isolated worker runtime, policy engine, secret manager and approval service are still required before any tool invocation or write action can be enabled.
 
-The overview endpoint attempts read-only Kubernetes/OpenShift inventory using the service account or a configured kubeconfig, and can optionally test an ONTAP REST connection using server-side environment variables.
+### PostgreSQL
+Alembic migration `0001_initial` creates tenant-scoped `integrations` and `audit_events` tables. Run migrations explicitly as a deployment step:
+```bash
+cd backend
+alembic upgrade head
+```
 
-The backend is not yet a production-ready multi-tenant service. Its optional bearer-token check is not a replacement for Entra OIDC authentication, and the current overview contract is limited. Do not expose it publicly as-is.
+A local PostgreSQL service is defined in `docker-compose.yml`. The example password is for local development only.
 
-## Production architecture roadmap
+## Entra configuration
 
-1. **Identity and tenancy:** Microsoft Entra OIDC, secure sessions, tenant isolation, workspace roles and group-based RBAC.
-2. **API and persistence:** FastAPI service, PostgreSQL, migrations, audit/event storage and background job queue.
-3. **AI gateway:** provider abstraction for approved models, streaming chat, tool selection, grounded retrieval, usage controls and prompt/tool audit.
-4. **MCP runtime:** isolated worker pool supporting stdio and Streamable HTTP, per-server policy, scoped credentials, TLS verification, egress controls and lifecycle management.
-5. **Integrations:** OpenShift/Kubernetes, NetApp ONTAP, AWS, Azure, GCP, VMware, Prometheus/Grafana, ITSM and knowledge sources.
-6. **Operations:** observability, alerting, incidents, approvals, runbooks, workflow orchestration and controlled execution.
-7. **Enterprise controls:** secrets manager, policy engine, immutable audit trail, rate limits, backup/restore and security monitoring.
+Create an Entra single-page application registration for the frontend and a separate API app registration:
+1. Configure the exact GitHub Pages redirect URI: `https://kolamani803.github.io/hiaido-ai/`.
+2. Expose a delegated API scope such as `api://<API-APP-CLIENT-ID>/access_as_user`.
+3. Define an app role named `HiAIDo.Access` and assign it to the intended users/groups.
+4. Grant the SPA delegated permission to the API scope and grant admin consent as required by your tenant.
+5. Set `tenantId`, `clientId` (SPA client ID) and `apiScope` in `config.js`.
+6. Configure the API deployment environment with `ENTRA_TENANT_ID`, `ENTRA_API_AUDIENCE` (the API app's audience/client ID or configured Application ID URI as appropriate for the token), and `ENTRA_REQUIRED_APP_ROLE=HiAIDo.Access`.
+7. Configure `CORS_ORIGINS` to the exact trusted frontend origin.
 
-## Deployment
+Do not enable access until the token's `aud`, `iss`, `tid` and `roles` claims have been verified against the actual Entra-issued access token in your tenant.
 
-GitHub Actions deploys the static frontend to GitHub Pages on pushes to `main`. In repository Settings → Pages, the publishing source should be **GitHub Actions**.
+## OpenShift deployment scaffold
+
+`deploy/openshift/api.yaml` provides:
+- Dedicated service account
+- ClusterRole limited to get/list/watch for nodes and pods
+- Two-replica API deployment
+- Non-root container, read-only root filesystem, dropped Linux capabilities and resource limits
+- Kubernetes health/readiness probes
+- Internal service and TLS-terminating OpenShift Route
+
+Before applying:
+1. Build and publish the backend image; replace the image tag in the manifest with the immutable release tag.
+2. Create namespace `hiaido`.
+3. Create secret `hiaido-api-secrets` with `DATABASE_URL`, `ENTRA_TENANT_ID`, `ENTRA_API_AUDIENCE`, and any optional ONTAP credentials.
+4. Configure the external PostgreSQL service, TLS, backups and network policy.
+5. Review the cluster-wide read-only RBAC grant with the platform security team.
+6. Apply the manifest and run Alembic migrations as a controlled release job before scaling the API.
+
+The current API image workflow publishes to GHCR when backend files change. Cluster deployment is intentionally not automated: it requires an approved target cluster, image pull configuration, secrets, and an authorized release process.
+
+## Not production-ready yet
+
+The following are still roadmap items and must not be represented as active:
+- Isolated MCP worker pool for stdio and Streamable HTTP
+- Secret-manager integration and credential rotation
+- AI model gateway, streaming chat, model routing and grounded retrieval
+- Full Entra group-to-workspace RBAC and multi-tenant administration UI
+- Approval engine and policy-enforced tool execution
+- Durable event pipeline, comprehensive immutable audit, alerting and SLOs
+- Full Kubernetes inventory permissions, cloud connectors, ONTAP telemetry and ITSM integrations
+- Automated tests, threat modeling, penetration testing and production operational runbooks
+
+The backend is a foundation, not a certified production SaaS service. Do not expose it before the identity, database, network, secrets and security review are complete.
+
+## Public preview and deployment
 
 Frontend URL: https://kolamani803.github.io/hiaido-ai/
 
-A successful Pages deployment does not deploy the FastAPI backend. Production backend deployment requires an approved container registry and protected Kubernetes/OpenShift namespace, Entra authentication, TLS, strict CORS, secret management and security review.
+GitHub Actions deploys the static frontend to GitHub Pages on pushes to `main`. GitHub Pages should use **GitHub Actions** as its publishing source.
 
-## Development
-
-Frontend: `index.html` (self-contained HTML/CSS/JavaScript).
-Runtime API URL can be set in Administration for the current browser session. The API must already be securely deployed and must implement the frontend's overview contract.
-
-Backend dependencies: `backend/requirements.txt`.
-Container build context: `backend/`.
+Backend image workflow: `.github/workflows/backend-image.yml`. Publishing requires GitHub Actions package write permissions and appropriate GHCR package access.
 
 Never commit credentials, API tokens, kubeconfigs, private keys or production connection strings.
