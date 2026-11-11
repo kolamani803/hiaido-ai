@@ -20,15 +20,17 @@ The UI distinguishes product capabilities from connected services. It does not f
 ## Current implementation status
 
 ### Frontend
-The GitHub Pages site is a public product preview. It includes a Microsoft Entra browser sign-in integration scaffold using MSAL Browser. Authentication remains disabled until the public identifiers in `config.js` are configured and the matching Entra app registrations, redirect URI, delegated API scope and role assignment are created.
-
-Only public identifiers belong in `config.js`. Never put client secrets, API tokens, certificates or infrastructure credentials in frontend files.
+The GitHub Pages site is a public product preview. Entra SSO is intentionally disabled for the initial release. Users sign in with administrator-created local accounts through the protected API. The first administrator is bootstrapped from server-side environment variables; there is no public self-registration route.
 
 ### API
 The FastAPI backend now includes:
-- Entra v2 access-token validation against tenant-specific Microsoft JWKS
-- Required API audience, issuer, tenant and application-role checks
-- Fail-closed behavior when Entra configuration is absent
+- Local email/password authentication with Argon2 password hashing and signed, expiring session tokens
+- First-administrator bootstrap from protected environment variables
+- Administrator-only user creation, user listing and account deactivation
+- Tenant-scoped user records and audit events for login and account administration
+- Role levels: admin, operator and viewer
+- Protected API routes using bearer session tokens
+- Fail-closed behavior when the session signing secret is missing or too short
 - `GET /health` and database-backed `GET /ready`
 - `GET /api/v1/me`
 - Tenant-scoped integration registry endpoints
@@ -48,18 +50,17 @@ alembic upgrade head
 
 A local PostgreSQL service is defined in `docker-compose.yml`. The example password is for local development only.
 
-## Entra configuration
+## Account setup
 
-Create an Entra single-page application registration for the frontend and a separate API app registration:
-1. Configure the exact GitHub Pages redirect URI: `https://kolamani803.github.io/hiaido-ai/`.
-2. Expose a delegated API scope such as `api://<API-APP-CLIENT-ID>/access_as_user`.
-3. Define an app role named `HiAIDo.Access` and assign it to the intended users/groups.
-4. Grant the SPA delegated permission to the API scope and grant admin consent as required by your tenant.
-5. Set `tenantId`, `clientId` (SPA client ID) and `apiScope` in `config.js`.
-6. Configure the API deployment environment with `ENTRA_TENANT_ID`, `ENTRA_API_AUDIENCE` (the API app's audience/client ID or configured Application ID URI as appropriate for the token), and `ENTRA_REQUIRED_APP_ROLE=HiAIDo.Access`.
-7. Configure `CORS_ORIGINS` to the exact trusted frontend origin.
+1. Configure PostgreSQL and set `DATABASE_URL`.
+2. Generate a random `SESSION_SECRET` of at least 32 characters.
+3. Set `BOOTSTRAP_ADMIN_EMAIL`, `BOOTSTRAP_ADMIN_PASSWORD` (at least 16 characters), and optionally `BOOTSTRAP_ADMIN_NAME` in the backend secret store.
+4. Run migrations with `cd backend && alembic upgrade head`.
+5. Start the API. On first startup, it creates the bootstrap administrator only if no administrator account exists.
+6. Configure the frontend API base URL in `config.js` or the Administration page.
+7. Sign in with the bootstrap administrator and create operator, viewer or additional administrator accounts.
 
-Do not enable access until the token's `aud`, `iss`, `tid` and `roles` claims have been verified against the actual Entra-issued access token in your tenant.
+There is no public sign-up route. User creation and account deactivation require the administrator role. Passwords are stored as Argon2 hashes; session tokens are signed and expire after `TOKEN_TTL_HOURS` (default 8 hours). Entra SSO can be added later as an optional identity provider.
 
 ## OpenShift deployment scaffold
 
