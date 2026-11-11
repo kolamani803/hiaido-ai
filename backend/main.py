@@ -99,7 +99,7 @@ def bootstrap_admin():
     if len(SESSION_SECRET)<32: raise RuntimeError("SESSION_SECRET must be configured with at least 32 characters")
     if len(BOOTSTRAP_PASSWORD)<16: raise RuntimeError("BOOTSTRAP_ADMIN_PASSWORD must be at least 16 characters")
     with engine.begin() as db:
-        count=db.execute(text("SELECT count(*) FROM user_accounts WHERE role='admin'")).scalar_one()
+        count=db.execute(text("SELECT count(*) FROM user_accounts WHERE tenant_id=:tenant AND role='admin'"),{"tenant":DEFAULT_TENANT}).scalar_one()
         if count==0:
             db.execute(text("""INSERT INTO user_accounts(id,tenant_id,email,name,password_hash,role,created_by)
             VALUES(:id,:tenant,:email,:name,:hash,'admin','bootstrap') ON CONFLICT (tenant_id,email) DO NOTHING"""),
@@ -109,7 +109,7 @@ def bootstrap_admin():
 def login(payload:LoginRequest,db=Depends(db_session)):
     if len(SESSION_SECRET)<32: raise HTTPException(503,"Local account authentication is not configured")
     email=normalize_email(payload.email)
-    row=db.execute(text("""SELECT id,tenant_id,email,name,password_hash,role,active FROM user_accounts WHERE email=:email"""),{"email":email}).mappings().first()
+    row=db.execute(text("""SELECT id,tenant_id,email,name,password_hash,role,active FROM user_accounts WHERE tenant_id=:tenant AND email=:email"""),{"tenant":DEFAULT_TENANT,"email":email}).mappings().first()
     if not row or not row["active"]:
         raise HTTPException(401,"Invalid email or password")
     try: password_hasher.verify(row["password_hash"],payload.password)
