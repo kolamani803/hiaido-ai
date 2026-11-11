@@ -87,3 +87,30 @@ def test_admin_login_user_lifecycle_and_role_boundaries():
         )
         assert disabled.status_code == 200
         assert client.get("/api/v1/me", headers=viewer_headers).status_code == 401
+
+
+def test_workspace_records_are_tenant_scoped_and_audited():
+    with TestClient(app) as client:
+        login = client.post("/api/v1/auth/login", json={
+            "email": "root@hiaido.test",
+            "password": "TestOnly-Strong-Password-2026!",
+        })
+        assert login.status_code == 200
+        headers = {"Authorization": "Bearer " + login.json()["access_token"]}
+        created = client.post("/api/v1/workspace/incident", headers=headers, json={
+            "title": "API latency investigation",
+            "status": "in_progress",
+            "priority": "high",
+            "owner": "platform-team",
+            "payload": {"service": "api", "impact": "Elevated latency"},
+        })
+        assert created.status_code == 201
+        item_id = created.json()["id"]
+        listed = client.get("/api/v1/workspace/incident", headers=headers)
+        assert listed.status_code == 200
+        assert any(item["id"] == item_id for item in listed.json()["items"])
+        updated = client.patch("/api/v1/workspace/incident/" + item_id, headers=headers, json={"status": "completed"})
+        assert updated.status_code == 200
+        audit = client.get("/api/v1/audit", headers=headers)
+        assert audit.status_code == 200
+        assert any(row["action"] == "workspace.incident.create" for row in audit.json()["items"])
