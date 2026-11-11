@@ -213,7 +213,7 @@ def overview(user:User=Depends(current_user)):
             r=requests.get(base+"/api/cluster",auth=(u,pw),verify=os.getenv("ONTAP_VERIFY_TLS","true").lower()=="true",timeout=8,headers={"Accept":"application/json"});r.raise_for_status()
             providers["ontap"]={"connected":True,"name":r.json().get("name","ONTAP cluster")};count+=1
         except requests.RequestException as e:providers["ontap"]={"connected":False,"error":str(e)[:240]}
-    return {"generated_at":datetime.now(timezone.utc).isoformat(),"resource_count":count,"healthy_count":healthy,"active_operations":active,"connected_integrations":sum(1 for p in providers.values() if p.get("connected")),"providers":providers,"resources":resources[:100],"activity":activity[:20]}
+    return {"generated_at":datetime.now(timezone.utc).isoformat(),"resource_count":count,"healthy_count":healthy,"active_operations":active,"connected_integrations":sum(1 for p in providers.values() if p.get("connected")),"registered_integrations":db.execute(text("SELECT count(*) FROM integrations WHERE tenant_id=:tenant"),{"tenant":user.tenant_id}).scalar_one(),"providers":providers,"resources":resources[:100],"activity":activity[:20]}
 
 
 # Tenant-scoped operational workspace: incidents, workflows, knowledge, dashboards, tasks, approvals and SLOs.
@@ -288,7 +288,7 @@ def list_audit_events(user:User=Depends(current_user),db=Depends(db_session),lim
 def platform_status(user:User=Depends(current_user),db=Depends(db_session)):
     counts=db.execute(text("""SELECT kind,count(*) AS total FROM workspace_items WHERE tenant_id=:tenant GROUP BY kind"""),{"tenant":user.tenant_id}).mappings().all()
     integrations_count=db.execute(text("SELECT count(*) FROM integrations WHERE tenant_id=:tenant"),{"tenant":user.tenant_id}).scalar_one()
-    return {"workspace_counts":{x["kind"]:x["total"] for x in counts},"integrations_registered":integrations_count,"database":"connected","authentication":"local_accounts","ai_model":"not_configured","mcp_execution":"not_configured"}
+    return {"workspace_counts":{x["kind"]:x["total"] for x in counts},"integrations_registered":integrations_count,"database":"connected","authentication":"local_accounts","ai_model":"configured" if bool(os.getenv("AI_API_KEY","").strip()) else "not_configured","mcp_execution":"not_configured"}
 
 
 # Optional OpenAI-compatible model gateway. Credentials remain server-side.
