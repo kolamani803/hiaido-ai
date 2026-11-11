@@ -1,0 +1,64 @@
+name: PostgreSQL migration and API tests
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - ".github/workflows/database-test.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  postgres-integration-tests:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: hiaido_test
+          POSTGRES_USER: hiaido
+          POSTGRES_PASSWORD: test-only-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U hiaido -d hiaido_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 15
+    env:
+      DATABASE_URL: postgresql+psycopg://hiaido:test-only-password@localhost:5432/hiaido_test
+      SESSION_SECRET: test-only-session-secret-that-is-long-enough-123456
+      BOOTSTRAP_ADMIN_EMAIL: root@hiaido.test
+      BOOTSTRAP_ADMIN_PASSWORD: TestOnly-Strong-Password-2026!
+      BOOTSTRAP_ADMIN_NAME: Test Administrator
+      DEFAULT_TENANT_ID: test-tenant
+      CORS_ORIGINS: http://testserver
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Install API and test dependencies
+        run: pip install -r backend/requirements.txt
+      - name: Apply migrations to PostgreSQL 16
+        working-directory: backend
+        run: alembic upgrade head
+      - name: Verify database schema
+        working-directory: backend
+        run: |
+          python - <<'PY'
+          import os
+          import psycopg
+          with psycopg.connect(os.environ["DATABASE_URL"]) as db:
+              version = db.execute("select version_num from alembic_version").fetchone()[0]
+              tables = {row[0] for row in db.execute("select tablename from pg_tables where schemaname='public'")}
+              expected = {"user_accounts", "integrations", "audit_events", "alembic_version"}
+              assert expected.issubset(tables), f"Missing tables: {expected - tables}"
+              assert version == "0002_user_accounts", version
+              print(f"PostgreSQL migration {version} passed; tables: {sorted(tables)}")
+          PY
+      - name: Test login, RBAC, integrations and account deactivation
+        working-directory: backend
+        run: pytest -q
