@@ -1,5 +1,6 @@
 /* HiAIDo.ai operational workspace enhancement layer */
 (()=>{
+ Object.defineProperty(window,'currentUser',{configurable:true,get:()=>currentUser});
  const kinds={
   incident:{label:"Incidents",desc:"Track operational disruptions, ownership, severity and remediation.",fields:[["service","Affected service"],["impact","Business impact"],["summary","Incident summary"],["runbook","Runbook / reference"]],priority:true},
   workflow:{label:"Automation workflows",desc:"Catalog repeatable operational workflows. Execution remains disabled until a worker runtime is deployed.",fields:[["trigger","Trigger"],["steps","Workflow steps"],["risk","Risk / safeguards"]]},
