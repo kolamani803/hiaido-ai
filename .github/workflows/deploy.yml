@@ -23,7 +23,8 @@ jobs:
         run: |
           for file in *.js; do node --check "$file"; done
       - name: Validate deployment manifests
-        run: ruby -e 'require "yaml"; ARGV.each { |file| YAML.load_file(file, aliases: true); puts "Valid YAML: #{file}" }' deploy/openshift/api.yaml deploy/openshift/migrate-job.yaml
+        run: |
+          ruby -e 'require "yaml"; ARGV.each { |file| YAML.load_file(file, aliases: true); puts "Valid YAML: #{file}" }' deploy/openshift/api.yaml deploy/openshift/migrate-job.yaml
       - name: Configure Pages
         uses: actions/configure-pages@v5
         with:
