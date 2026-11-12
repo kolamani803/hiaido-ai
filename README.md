@@ -78,7 +78,9 @@ Before applying:
 3. Create secret `hiaido-api-secrets` with `DATABASE_URL` (use the least-privilege `hiaido_app` role's Neon connection string), a random `SESSION_SECRET` (32+ characters), `BOOTSTRAP_ADMIN_EMAIL`, `BOOTSTRAP_ADMIN_PASSWORD` (16+ characters), and optional `AI_API_KEY`, `ONTAP_USERNAME`, and `ONTAP_PASSWORD`. Configure `AI_API_BASE_URL` and `AI_MODEL` in the ConfigMap or secret store.
 4. Configure the external PostgreSQL service, TLS, backups and network policy.
 5. Review the cluster-wide read-only RBAC grant with the platform security team.
-6. Apply the namespace, ConfigMap and secret.\n7. Run `deploy/openshift/migrate-job.yaml` once for the release and confirm it completes.\n8. Apply `deploy/openshift/api.yaml` and verify `/health` and `/ready`.
+6. Apply the namespace, ConfigMap and secret.
+7. Run `deploy/openshift/migrate-job.yaml` once for the release and confirm it completes.
+8. Apply `deploy/openshift/api.yaml` and verify `/health` and `/ready`.
 
 The current API image workflow publishes to GHCR when backend files change. Cluster deployment is intentionally not automated: it requires an approved target cluster, image pull configuration, secrets, and an authorized release process.
 
