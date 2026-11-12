@@ -9,4 +9,6 @@ COPY migrations ./migrations
 RUN python -m compileall -q /app
 USER 1001
 EXPOSE 8080
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
+# Free Render instances do not provide a pre-deploy command. Apply safe, versioned
+# Alembic migrations at container start before serving requests.
+CMD ["sh", "-c", "alembic upgrade head && exec uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080}"]
