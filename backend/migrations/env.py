@@ -4,6 +4,11 @@ import os
 
 config = context.config
 url = os.getenv("DATABASE_URL", config.get_main_option("sqlalchemy.url"))
+# Match the runtime SQLAlchemy driver installed in the backend image.
+if url.startswith("postgres://"):
+    url = "postgresql+psycopg://" + url[len("postgres://"):]
+elif url.startswith("postgresql://"):
+    url = "postgresql+psycopg://" + url[len("postgresql://"):]
 config.set_main_option("sqlalchemy.url", url.replace("%", "%%"))
 
 def run_migrations_offline():
