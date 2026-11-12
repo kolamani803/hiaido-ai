@@ -2,13 +2,12 @@ services:
   - type: web
     name: hiaido-api
     runtime: docker
-    plan: starter
+    plan: free
     region: singapore
     rootDir: backend
     dockerfilePath: ./Dockerfile
     dockerContext: .
     healthCheckPath: /health
-    preDeployCommand: alembic upgrade head
     numInstances: 1
     autoDeploy: true
     envVars:
