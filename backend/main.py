@@ -26,6 +26,12 @@ BOOTSTRAP_NAME=os.getenv("BOOTSTRAP_ADMIN_NAME","HiAIDo Administrator")
 DEFAULT_TENANT=os.getenv("DEFAULT_TENANT_ID","default").strip()
 password_hasher=PasswordHasher()
 URL=os.getenv("DATABASE_URL","").strip()
+# Neon and most managed PostgreSQL providers supply postgresql:// URLs. Pin SQLAlchemy to psycopg v3,
+# which is installed in this image, instead of relying on the absent psycopg2 default driver.
+if URL.startswith("postgres://"):
+    URL="postgresql+psycopg://"+URL[len("postgres://"):]
+elif URL.startswith("postgresql://"):
+    URL="postgresql+psycopg://"+URL[len("postgresql://"):]
 engine=create_engine(URL,pool_pre_ping=True,pool_recycle=300) if URL else None
 Session=sessionmaker(bind=engine,autoflush=False,autocommit=False) if engine else None
 app=FastAPI(title="HiAIDo.ai API",version=VERSION)
