@@ -62,6 +62,20 @@ A local PostgreSQL service is defined in `docker-compose.yml`. The example passw
 
 There is no public sign-up route. User creation and account deactivation require the administrator role. Passwords are stored as Argon2 hashes; session tokens are signed and expire after `TOKEN_TTL_HOURS` (default 8 hours). Entra SSO can be added later as an optional identity provider.
 
+## Render API deployment
+
+A Render Blueprint is provided in `render.yaml` for deploying the FastAPI service from the `backend` directory in the Singapore region. It builds the backend Dockerfile, runs `alembic upgrade head` as a pre-deploy migration step, and checks the service at `/health`.
+
+1. Connect the GitHub repository to Render and create a Blueprint from `render.yaml`.
+2. When prompted, provide `DATABASE_URL` using the Neon `hiaido_app` role connection string. Keep it in Render's secret environment variables; never commit it.
+3. Provide `BOOTSTRAP_ADMIN_EMAIL` and a unique `BOOTSTRAP_ADMIN_PASSWORD` of at least 16 characters. Render generates `SESSION_SECRET`.
+4. Deploy and wait for the `/health` check to pass. Confirm `/ready` returns ready before configuring the frontend API base URL.
+5. Set the frontend's `HIAIDO_API_BASE` to the deployed HTTPS API origin, then publish the Pages site again.
+
+The Blueprint does not configure an AI key, ONTAP credentials, or any cluster credentials. Add those only when the relevant service is approved and required. Never use a production or employer credential in a demo deployment.
+
+Render's pre-deploy command is available on paid web service plans. If using a plan without pre-deploy support, do not bypass migrations: run the migration command once as a controlled deployment task before starting the API.
+
 ## OpenShift deployment scaffold
 
 `deploy/openshift/api.yaml` provides:
