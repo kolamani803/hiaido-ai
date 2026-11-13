@@ -65,6 +65,17 @@ Free web services can spin down when idle and may take time to wake on the next 
 
 Before applying, build and publish the backend image, create namespace and secret, configure PostgreSQL/TLS/backups/network policy, review RBAC, run `deploy/openshift/migrate-job.yaml`, deploy and verify health/readiness. Cluster deployment is intentionally not automated and requires an approved target cluster and authorized release process.
 
+## Enterprise workspace modules
+
+The enterprise navigation includes service catalog, projects and applications, architecture records, deployment tracking, change intelligence, asset inventory, infrastructure exploration, incidents, SLO definitions, runbooks, automation definitions, AI agent registry, knowledge, approvals, security findings, FinOps, operational analytics, integrations/MCP, audit and administration. The additional workspace records are tenant-scoped in PostgreSQL and support create/list/update with audit events.
+
+The initial release deliberately distinguishes persisted definitions from live execution:
+- Agent, workflow, architecture, service, asset, change, policy and runbook records are persisted and editable.
+- MCP registrations store connection metadata only. They do not launch arbitrary server processes or invoke remote tools.
+- Infrastructure inventory is read-only and only appears when an authorized Kubernetes/OpenShift runtime or configured provider responds.
+- The AI gateway is provider-independent and requires an explicitly configured OpenAI-compatible endpoint, model and API key. No paid AI provider is enabled by default.
+- Terminal sessions, live telemetry, cloud billing, predictive analytics, autonomous remediation and isolated MCP workers require additional secured runtime services and provider credentials.
+
 ## Not production-ready yet
 
 Still roadmap: isolated MCP worker pool, secret-manager integration, AI model routing/streaming/retrieval grounding/live tool context, full Entra group RBAC, approval engine and policy-enforced tool execution, durable event pipeline, immutable audit, alerting/SLO telemetry, full cloud connectors, automated security testing and production runbooks.
