@@ -22,6 +22,8 @@ jobs:
       - name: Validate JavaScript syntax
         run: |
           for file in *.js; do node --check "$file"; done
+      - name: Validate backend Python syntax
+        run: python -m compileall -q backend
       - name: Validate deployment manifests
         run: |
           ruby -e 'require "yaml"; ARGV.each { |file| YAML.load_file(file, aliases: true); puts "Valid YAML: #{file}" }' deploy/openshift/api.yaml deploy/openshift/migrate-job.yaml
