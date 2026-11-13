@@ -25,10 +25,6 @@ services:
         value: hiaido-primary
       - key: CORS_ORIGINS
         value: https://kolamani803.github.io
-      - key: AI_API_BASE_URL
-        value: https://api.openai.com/v1
-      - key: AI_MODEL
-        value: gpt-4.1-mini
       - key: TOKEN_TTL_HOURS
         value: "8"
       - key: ONTAP_VERIFY_TLS
