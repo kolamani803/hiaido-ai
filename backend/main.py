@@ -16,7 +16,7 @@ from sqlalchemy import create_engine,text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import sessionmaker
 
-VERSION="0.3.0"
+VERSION="0.4.0"
 SESSION_SECRET=os.getenv("SESSION_SECRET","").strip()
 SESSION_ISSUER="hiaido.ai"
 TOKEN_TTL_HOURS=int(os.getenv("TOKEN_TTL_HOURS","8"))
@@ -225,7 +225,7 @@ def overview(user:User=Depends(current_user),db=Depends(db_session)):
 # Tenant-scoped operational workspace: incidents, workflows, knowledge, dashboards, tasks, approvals and SLOs.
 from fastapi import Query
 
-WORKSPACE_KINDS={"incident","workflow","knowledge","dashboard","task","approval","slo"}
+WORKSPACE_KINDS={"incident","workflow","knowledge","dashboard","task","approval","slo","agent","service","asset","change","architecture","security","policy","environment","deployment","runbook","application","project"}
 class WorkspaceItemCreate(BaseModel):
     title:str=Field(min_length=2,max_length=200)
     status:str=Field(default="open",pattern="^(open|in_progress|blocked|pending_approval|completed|archived)$")
@@ -294,7 +294,7 @@ def list_audit_events(user:User=Depends(current_user),db=Depends(db_session),lim
 def platform_status(user:User=Depends(current_user),db=Depends(db_session)):
     counts=db.execute(text("""SELECT kind,count(*) AS total FROM workspace_items WHERE tenant_id=:tenant GROUP BY kind"""),{"tenant":user.tenant_id}).mappings().all()
     integrations_count=db.execute(text("SELECT count(*) FROM integrations WHERE tenant_id=:tenant"),{"tenant":user.tenant_id}).scalar_one()
-    return {"workspace_counts":{x["kind"]:x["total"] for x in counts},"integrations_registered":integrations_count,"database":"connected","authentication":"local_accounts","ai_model":"configured" if bool(os.getenv("AI_API_KEY","").strip()) else "not_configured","mcp_execution":"not_configured"}
+    return {"workspace_counts":{x["kind"]:x["total"] for x in counts},"integrations_registered":integrations_count,"database":"connected","authentication":"local_accounts","ai_model":"configured" if bool(os.getenv("AI_API_KEY","").strip()) else "not_configured","mcp_execution":"not_configured","agent_registry":"available","workflow_execution":"not_configured","telemetry":"provider_dependent","execution_mode":"approval_gated"}
 
 
 # Optional OpenAI-compatible model gateway. Credentials remain server-side.
