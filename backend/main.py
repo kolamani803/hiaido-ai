@@ -303,10 +303,10 @@ class CopilotRequest(BaseModel):
 
 @app.post("/api/v1/copilot/chat")
 def copilot_chat(payload:CopilotRequest,user:User=Depends(require_operator)):
-    base=os.getenv("AI_API_BASE_URL","https://api.openai.com/v1").rstrip("/")
+    base=os.getenv("AI_API_BASE_URL","").rstrip("/")
     key=os.getenv("AI_API_KEY","").strip()
-    model=os.getenv("AI_MODEL","gpt-4.1-mini").strip()
-    if not key: raise HTTPException(503,"AI model gateway is not configured. Set AI_API_KEY and AI_MODEL on the API deployment.")
+    model=os.getenv("AI_MODEL","").strip()
+    if not key or not base or not model: raise HTTPException(503,"AI model gateway is not configured. Set AI_API_BASE_URL, AI_MODEL and AI_API_KEY on the API deployment. Use an organization-approved or self-hosted OpenAI-compatible model endpoint.")
     parsed=urlparse(base)
     if parsed.scheme!="https" or not parsed.hostname or parsed.username or parsed.password:
         raise HTTPException(503,"AI_API_BASE_URL must be a valid HTTPS endpoint without embedded credentials")
